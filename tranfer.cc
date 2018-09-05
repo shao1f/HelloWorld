@@ -1,21 +1,31 @@
 #include "tranfer.h"
 
+// 多态实现的虚函数
 void TranferServer::ConnectEventHandle(int connectfd)
-{
+{	
 	int serverfd = socket(AF_INET, SOCK_STREAM, 0);
-	if(connect(serverfd, (struct sockaddr*)&_socks5addr, sizeof(_socks5addr)) < 0)
+	if (serverfd == -1)
 	{
-		ErrorLog("connect socks5 server");
+		ErrorLog("socket");
 		return;
 	}
 
+	if (connect(serverfd, (struct sockaddr*)&_socks5addr, sizeof(_socks5addr)) < 0)
+	{
+		ErrorLog("connect socks5");
+		return;
+	}
+
+	// 设置成非阻塞，并且添加到epoll
 	SetNonblocking(connectfd);
-	OpEvent(connectfd, EPOLLIN, EPOLL_CTL_ADD);
+	OPEvent(connectfd, EPOLLIN, EPOLL_CTL_ADD);
 
 	SetNonblocking(serverfd);
-	OpEvent(serverfd, EPOLLIN, EPOLL_CTL_ADD);
+	OPEvent(serverfd, EPOLLIN, EPOLL_CTL_ADD);
 
 	Connect* con = new Connect;
+	con->_state = FORWARDING;
+
 	con->_clientChannel._fd = connectfd;
 	con->_ref++;
 	_fdConnectMap[connectfd] = con;
@@ -23,7 +33,6 @@ void TranferServer::ConnectEventHandle(int connectfd)
 	con->_serverChannel._fd = serverfd;
 	con->_ref++;
 	_fdConnectMap[serverfd] = con;
-	con->_state = FORWARDING;
 }
 
 void TranferServer::ReadEventHandle(int connectfd)
@@ -32,48 +41,27 @@ void TranferServer::ReadEventHandle(int connectfd)
 	if (it != _fdConnectMap.end())
 	{
 		Connect* con = it->second;
-		bool recvDecrypt = false, sendEncry = true;
-		Channel* clinetChannel = &(con->_clientChannel);
-		Channel* serverChannel = &(con->_serverChannel);
+		Channel* clientChannel = &con->_clientChannel;
+		Channel* serverChannel = &con->_serverChannel;
+		bool sendencry = true, recvdecrypt = false;
 		if (connectfd == con->_serverChannel._fd)
 		{
-			swap(recvDecrypt, sendEncry);
-			swap(clinetChannel, serverChannel);
+			swap(clientChannel, serverChannel);
+			swap(sendencry, recvdecrypt);
 		}
-
-		Forwarding(clinetChannel, serverChannel, recvDecrypt, sendEncry);
+		
+		Forwarding(clientChannel, serverChannel
+			,sendencry, recvdecrypt);
 	}
 	else
 	{
-		ErrorLog("invalid fd:%d", connectfd);
-	}
-}
-
-void TranferServer::WriteEventHandle(int connectfd)
-{
-	TraceLog("%d", connectfd);
-	map<int, Connect*>::iterator it = _fdConnectMap.find(connectfd);
-	if (it != _fdConnectMap.end())
-	{
-		Connect* con = it->second;
-		Channel* channel = &(con->_clientChannel);
-		if (connectfd == con->_serverChannel._fd)
-		{
-			channel = &(con->_serverChannel);
-		}
-
-		string buffer;
-		buffer.swap(channel->_buffer);
-		SendInLoop(connectfd, buffer.c_str(), buffer.size());
-	}
-	else
-	{
-		ErrorLog("invalid fd:%d", connectfd);
+		assert(false);
 	}
 }
 
 int main()
 {
-	TranferServer server(8000, "120.78.70.251", 8001);
+	/* TranferServer server(8880, "120.78.70.251", 9900); */
+	TranferServer server(8880, "67.209.185.225", 8001);
 	server.Start();
 }
